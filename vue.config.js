@@ -4,5 +4,4 @@ module.exports = defineConfig({
   publicPath: process.env.NODE_ENV === 'production'
     ? '/Movie/'  // Đường dẫn repo trên GitHub Pages
     : '/',
-  outputDir: 'docs', // Đặt thư mục build là 'docs'
 });
