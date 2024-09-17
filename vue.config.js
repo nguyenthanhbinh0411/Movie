@@ -2,7 +2,7 @@ const { defineConfig } = require('@vue/cli-service');
 module.exports = defineConfig({
   transpileDependencies: true,
   publicPath: process.env.NODE_ENV === 'production'
-    ? '/'  // Đường dẫn repo trên GitHub Pages
-    : '/'
+    ? '/Movie/'  // Đường dẫn repo trên GitHub Pages
+    : '/',
+  outputDir: 'docs', // Đặt thư mục build là 'docs'
 });
-
