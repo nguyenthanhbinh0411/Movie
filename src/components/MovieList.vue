@@ -1,166 +1,360 @@
 <template>
   <div>
-    <h1>Anime</h1>
-    <div v-if="loading" class="loading">Đang tải...</div>
-    <div v-else>
-      <div class="container">
-        <div class="movie-list">
-          <div v-for="movie in movies" :key="movie.slug" class="movie-item">
-            <img :src="movie.thumb_url" :alt="movie.name" class="movie-thumb" />
-            <h2>{{ movie.name }}</h2>
-            <p>Chất lượng: {{ movie.quality }}</p>
-            <p>Lượt xem: {{ formatViews(movie.views) }}</p> 
-            <router-link :to="{ name: 'MovieDetails', params: { slug: movie.slug } }" class="movie-link">Xem phim</router-link>
+    <h1>Danh Sách Anime</h1>
+    <div class="container">
+      <div class="filter-section">
+        <select v-model="selectedCategory" @change="applyFilters">
+          <option value="">Tất cả thể loại</option>
+          <option v-for="category in categories" :key="category.slug" :value="category.slug">
+            {{ category.name }}
+          </option>
+        </select>
+        <select v-model="selectedYear" @change="applyFilters">
+          <option value="">Tất cả năm</option>
+          <option v-for="year in years" :key="year" :value="year">{{ year }}</option>
+        </select>
+        <select v-model="selectedCountry" @change="applyFilters">
+          <option value="">Tất cả quốc gia</option>
+          <option v-for="country in countries" :key="country.slug" :value="country.slug">
+            {{ country.name }}
+          </option>
+        </select>
+        <select v-model="selectedType" @change="applyFilters">
+          <option value="">Tất cả loại phim</option>
+          <option value="series">Phim bộ</option>
+          <option value="single">Phim lẻ</option>
+          <option value="hoathinh">Hoạt hình</option>
+          <option value="tvshows">TV Shows</option>
+        </select>
+      </div>
+      
+      <div class="search-bar">
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="Tìm kiếm phim..."
+          @input="debounceSearch"
+        >
+        <button @click="searchMovies" class="search-button">
+          <i class="bi bi-search"></i>
+        </button>
+      </div>
+
+      <div v-if="loading" class="loading">Đang tải dữ liệu...</div>
+      <div v-if="error" class="error">{{ error }}</div>
+
+      <div v-if="movies.length > 0" class="movie-list">
+        <div v-for="(movie, index) in movies" :key="index" class="movie-card card">
+          <img :src="getMovieImage(movie)" :alt="movie.name" class="card-img-top movie-thumb" />
+          <div class="card-body">
+            <h5 class="card-title">{{ movie.name }}</h5>
+            <p class="card-text">{{ movie.description }}</p>
+            <router-link class="btn btn-custom" :to="`/movie/${movie.slug}`">Xem phim</router-link>
           </div>
         </div>
       </div>
-      <div class="pagination">
-        <button @click="prevPage" :disabled="page <= 1">Trang trước</button>
-        <span>Trang {{ page }} / {{ totalPages }}</span>
-        <button @click="nextPage" :disabled="page >= totalPages">Trang sau</button>
+
+      <div v-if="!loading && movies.length === 0" class="no-movies">
+        Không có phim nào.
+      </div>
+
+      <div v-if="!isSearching" class="pagination">
+        <button @click="fetchMovies(currentPage - 1)" :disabled="currentPage === 1">Trang trước</button>
+        <span v-for="page in getPaginationButtons()" :key="page">
+          <button @click="fetchMovies(page)" :class="{ active: page === currentPage }">{{ page }}</button>
+        </span>
+        <button @click="fetchMovies(currentPage + 1)" :disabled="currentPage === totalPages">Trang sau</button>
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import axios from 'axios';
-
 export default {
-  name: 'MovieList',
   data() {
     return {
       movies: [],
-      page: 1,
+      currentPage: 1,
       totalPages: 1,
-      loading: true,
+      loading: false,
+      error: null,
+      searchQuery: '',
+      isSearching: false,
+      debounceTimer: null,
+      selectedCategory: '',
+      selectedYear: '',
+      selectedCountry: '',
+      selectedType: '',
+      categories: [
+  { slug: 'tinh-cam', name: 'Tình cảm' },
+  { slug: 'hai-huoc', name: 'Hài hước' },
+  { slug: 'hanh-dong', name: 'Hành động' },
+  { slug: 'vien-tuong', name: 'Viễn tưởng' },
+  { slug: 'kinh-di', name: 'Kinh dị' },
+  { slug: 'vo-thuat', name: 'Võ thuật' },
+  { slug: 'phieu-luu', name: 'Phiêu lưu' },
+  { slug: 'co-trang', name: 'Cổ trang' },
+  { slug: 'bi-an', name: 'Bí ẩn' },
+  { slug: 'hoc-duong', name: 'Học đường' },
+  { slug: 'am-nhac', name: 'Âm nhạc' },
+  { slug: 'the-thao', name: 'Thể thao' },
+  { slug: 'chinh-kich', name: 'Chính kịch' },
+  { slug: 'gia-dinh', name: 'Gia đình' },
+  { slug: 'tai-lieu', name: 'Tài liệu' },
+  { slug: 'hoat-hinh', name: 'Hoạt hình' },
+  { slug: 'than-thoai', name: 'Thần thoại' },
+  { slug: 'trinh-tham', name: 'Trinh thám' },
+  { slug: 'tu-linh', name: 'Tử linh' },
+  { slug: 'khoa-hoc', name: 'Khoa học' },
+  { slug: 'thieu-nhi', name: 'Thiếu nhi' },
+  { slug: 'chien-tranh', name: 'Chiến tranh' },
+  { slug: 'phim-ma', name: 'Phim ma' }
+],
+
+years: Array.from({ length: 30 }, (_, i) => 2023 - i),
+
+countries: [
+  { slug: 'viet-nam', name: 'Việt Nam' },
+  { slug: 'trung-quoc', name: 'Trung Quốc' },
+  { slug: 'han-quoc', name: 'Hàn Quốc' },
+  { slug: 'nhat-ban', name: 'Nhật Bản' },
+  { slug: 'my', name: 'Mỹ' },
+  { slug: 'anh', name: 'Anh' },
+  { slug: 'phap', name: 'Pháp' },
+  { slug: 'duc', name: 'Đức' },
+  { slug: 'thai-lan', name: 'Thái Lan' },
+  { slug: 'an-do', name: 'Ấn Độ' },
+  { slug: 'hong-kong', name: 'Hồng Kông' },
+  { slug: 'italia', name: 'Italia' },
+  { slug: 'nga', name: 'Nga' },
+  { slug: 'uc', name: 'Úc' },
+  { slug: 'canada', name: 'Canada' },
+  { slug: 'mexico', name: 'Mexico' },
+  { slug: 'tay-ban-nha', name: 'Tây Ban Nha' },
+  { slug: 'thai-lan', name: 'Thái Lan' },
+  { slug: 'philipin', name: 'Philippines' },
+  { slug: 'malaysia', name: 'Malaysia' }
+]
+
     };
+  },
+  mounted() {
+    this.fetchMovies(this.currentPage);
   },
   methods: {
     async fetchMovies(page) {
-      // Xóa dữ liệu localStorage khi chuyển trang
-      localStorage.clear();
-
+      this.loading = true;
+      this.error = null;
       try {
-        this.loading = true;
-        const responses = await Promise.all([
-          axios.get(`https://phim.nguonc.com/api/films/the-loai/hoat-hinh?page=${page}`),
-          axios.get(`https://phim.nguonc.com/api/films/the-loai/hoat-hinh?page=${page + 1}`)
-        ]);
+        let url = `https://apii.online/api/danh-sach?type=hoathinh&page=${page}`;
+        if (this.selectedCategory) url += `&category=${this.selectedCategory}`;
+        if (this.selectedYear) url += `&year=${this.selectedYear}`;
+        if (this.selectedCountry) url += `&country=${this.selectedCountry}`;
+        if (this.selectedType) url += `&type=${this.selectedType}`;
 
-        const [responsePage1, responsePage2] = responses;
-        const moviesPage1 = responsePage1.data.items;
-        const moviesPage2 = responsePage2.data.items;
-
-        this.movies = [...moviesPage1, ...moviesPage2].map(movie => {
-          let storedViews = localStorage.getItem(`movieViews-${movie.slug}`);
-          if (!storedViews) {
-            storedViews = Math.floor(Math.random() * 990000) + 10000; 
-            localStorage.setItem(`movieViews-${movie.slug}`, storedViews);
-          }
-          return {
-            ...movie,
-            views: parseInt(storedViews, 10)
-          };
-        });
-        this.page = responsePage1.data.paginate.current_page;
-        this.totalPages = responsePage1.data.paginate.total_page;
-      } catch (error) {
-        console.error("Lỗi khi tải dữ liệu:", error);
+        const response = await fetch(url);
+        const data = await response.json();
+        this.movies = data.items || [];
+        this.currentPage = page;
+        this.totalPages = data.pagination.totalPages;
+      } catch (err) {
+        this.error = 'Lỗi khi tải danh sách phim.';
       } finally {
         this.loading = false;
       }
     },
-    prevPage() {
-      if (this.page > 1) {
-        this.page--;
-        this.fetchMovies(this.page);
+    async searchMovies() {
+      if (!this.searchQuery.trim()) {
+        this.isSearching = false;
+        return this.fetchMovies(1);
+      }
+
+      this.isSearching = true;
+      this.loading = true;
+      this.error = null;
+      try {
+        const response = await fetch(`https://apii.online/api/danh-sach?search=${encodeURIComponent(this.searchQuery)}`);
+        const data = await response.json();
+        this.movies = data.items || [];
+        this.totalPages = 1;
+      } catch (err) {
+        this.error = 'Lỗi khi tìm kiếm phim.';
+      } finally {
+        this.loading = false;
       }
     },
-    nextPage() {
-      if (this.page < this.totalPages) {
-        this.page++;
-        this.fetchMovies(this.page);
+    debounceSearch() {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = setTimeout(() => {
+        this.searchMovies();
+      }, 300);
+    },
+    getPaginationButtons() {
+      const buttons = [];
+      for (let i = this.currentPage - 1; i <= this.currentPage + 1; i++) {
+        if (i > 0 && i <= this.totalPages) {
+          buttons.push(i);
+        }
+      }
+      return buttons;
+    },
+    getMovieImage(movie) {
+      if (movie.thumb_url) {
+        return movie.thumb_url.startsWith('http') ? movie.thumb_url : `https://apii.online${movie.thumb_url}`;
+      } else {
+        return 'default-thumbnail.jpg';
       }
     },
-    formatViews(views) {
-      return views.toLocaleString(); // Thêm dấu phẩy ngăn cách hàng nghìn
+    applyFilters() {
+      this.fetchMovies(1);
     },
-  },
-  created() {
-    this.fetchMovies(this.page);
-  },
+  }
 };
 </script>
-
 <style scoped>
 .container {
-max-width: 1200px; /* Set maximum width of the container */
-margin: 0 auto; /* Center the container */
-padding: 0 16px; /* Add some horizontal padding */
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+h1 {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.search-bar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.search-bar input {
+  width: 300px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px 0 0 4px;
+  font-size: 16px;
+}
+
+.search-button {
+  padding: 10px 15px;
+  border: none;
+  background-color: #007bff;
+  color: white;
+  border-radius: 0 4px 4px 0;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.search-button i {
+  font-size: 20px; /* Kích thước của icon */
+}
+
+.search-button:hover {
+  background-color: #0056b3;
+}
+
+.loading, .error, .no-movies {
+  text-align: center;
+  margin-top: 20px;
 }
 
 .movie-list {
-display: flex;
-flex-wrap: wrap;
-gap: 16px;
-justify-content: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
 }
 
-.movie-item {
-width: calc(25% - 16px); /* Adjust width to fit 4 items per row */
-border: 1px solid #ddd;
-padding: 8px; /* Reduce padding for a smaller item */
-text-align: center;
-box-sizing: border-box; /* Ensure padding and border are included in the width */
-transition: transform 0.3s, box-shadow 0.3s; /* Smooth transition for effects */
+.movie-card {
+  flex: 0 0 calc(24% - 16px);
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: transform 0.3s, box-shadow 0.3s;
 }
 
-.movie-item:hover {
-transform: scale(1.05); /* Slightly enlarge the item on hover */
-box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Add shadow on hover */
+.movie-card:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
 }
 
 .movie-thumb {
-width: 200px; /* Reduce width of images */
-height: 280px; /* Reduce height of images */
-object-fit: cover; /* Ensure image covers the container without distortion */
-margin-bottom: 8px; /* Add some space below the image */
+  width: 100%;
+  height: 280px;
+  object-fit: cover;
 }
 
-.movie-item h2 {
-font-size: 14px; /* Adjust font size for title */
-margin: 8px 0; /* Add space above and below the title */
+.card-body {
+  padding: 16px;
 }
 
-.movie-item p {
-font-size: 12px; /* Adjust font size for quality text */
-margin: 8px 0; /* Add space above and below the quality text */
+.card-title {
+  font-size: 16px;
+  margin-bottom: 8px;
 }
 
-.movie-link {
-display: inline-block;
-margin-top: 8px;
-padding: 8px 16px;
-background-color: #007bff;
-color: white;
-text-decoration: none;
-border-radius: 4px;
-transition: background-color 0.3s; /* Smooth transition for button color */
+.card-text {
+  font-size: 14px;
+  margin-bottom: 12px;
 }
 
-.movie-link:hover {
-background-color: #0056b3; /* Darker shade on hover */
+.btn-custom {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  text-align: center;
+  text-decoration: none;
+  transition: background-color 0.3s;
+}
+
+.btn-custom:hover {
+  background-color: #0056b3;
 }
 
 .pagination {
-margin-top: 16px;
-text-align: center;
+  margin-top: 16px;
+  text-align: center;
 }
 
-.loading {
-text-align: center;
-font-size: 18px;
-margin-top: 20px;
+.pagination button {
+  margin: 0 8px;
+  padding: 8px 12px;
+  background-color: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.pagination button:hover {
+  background-color: #e0e0e0;
+}
+
+.pagination button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.pagination button.active {
+  background-color: #007bff;
+  color: white;
+}.filter-section {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.filter-section select {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
 }
 </style>

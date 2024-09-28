@@ -1,28 +1,36 @@
 <template>
-  <div v-if="movie" class="movie-details">
-    <div class="movie-container">
-      <div class="movie-info-section">
-        <img :src="movie.poster_url" alt="Movie Poster" class="movie-poster"/>
-        <div class="movie-info">
-          <h1 class="movie-title" style="margin: 0px;">{{ movie.name }}</h1>
-          <p><strong>Tên gốc:</strong> {{ movie.original_name }}</p>
-          <p><strong>Ngày phát hành:</strong> {{ new Date(movie.created).toLocaleDateString('vi-VN') }}</p>
-          <p><strong>Chất lượng:</strong> {{ movie.quality }}</p>
-          <p><strong>Ngôn ngữ:</strong> {{ movie.language }}</p>
-          <p><strong>Quốc gia:</strong> {{ movie.category[4].list[0].name }}</p>
-          <p><strong>Thể loại:</strong> {{ movie.category[2].list[0].name }}</p>
-          <p><strong>Số tập:</strong> {{ movie.total_episodes }}</p>
-          <p><strong>Tập hiện tại:</strong> {{ movie.current_episode }}</p>
-          <p><strong>Lượt xem:</strong> {{ formatViews(movie.views) }}</p> 
-          <!-- Hiển thị lượt xem -->
-          <p class="movie-description"><strong>Mô tả:</strong>{{ movie.description }}</p>
-          <button @click="redirectToMoviePlayer" class="watch-button">Xem phim</button>
+  <div class="movie-details">
+    <div v-if="loading" class="loading-message">
+      Đang tải dữ liệu...
+    </div>
+    <div v-else-if="error">
+      Có lỗi xảy ra: {{ error }}
+    </div>
+    <div v-else class="movie-container row">
+      <div class="col-md-4">
+        <img :src="movie.thumb_url" :alt="movie.name" class="movie-poster" />
+      </div>
+      <div class="col-md-8 movie-info">
+        <h1 class="movie-title">{{ movie.name }}</h1>
+        <p>{{ movie.origin_name }}</p>
+        <p>{{ movie.type }} | {{ movie.status }}</p>
+        <p>{{ movie.time }}</p>
+        <p>Chất lượng: {{ movie.quality }}</p>
+        <p>Ngôn ngữ: {{ movie.lang }}</p>
+        <p>Năm sản xuất: {{ movie.year }}</p>
+        <p>Số lượt xem: {{ movie.view }}</p>
+        <p>Thể loại: {{ movie.category.map(c => c.name).join(', ') }}</p>
+        <p>Quốc gia: {{ movie.country.map(c => c.name).join(', ') }}</p>
+        <button class="btn btn-primary" @click="showTrailer = true">Xem trailer</button>
+        <router-link :to="{ name: 'MoviePlayer', params: { slug: $route.params.slug, episode: 'tap-1' }}" class="btn btn-success">Xem phim</router-link>
+        
+        <div v-if="showTrailer" class="trailer-container">
+          <iframe :src="getTrailerSrc()" width="100%" height="400" frameborder="0" allowfullscreen></iframe>
+          <button class="btn btn-secondary" @click="showTrailer = false">Đóng</button>
         </div>
       </div>
     </div>
-  </div>
-  <div v-else class="loading-message">
-    <p>Đang tải thông tin phim...</p>
+    <p class="movie-description">Nội dung: {{ movie.content }}</p>
   </div>
 </template>
 
@@ -32,39 +40,31 @@ import axios from 'axios';
 export default {
   data() {
     return {
-      movie: null,
-      selectedEpisode: null,
-      slug: this.$route.params.slug,  // Lấy slug từ route params
+      movie: {},
+      loading: true,
+      error: null,
+      showTrailer: false,
     };
+  },
+  mounted() {
+    this.fetchMovieDetails();
   },
   methods: {
     async fetchMovieDetails() {
       try {
-        const response = await axios.get(`https://phim.nguonc.com/api/film/${this.slug}`);
-        if (response.data.status === 'success') {
-          // Lấy lượt xem từ localStorage
-          const storedViews = localStorage.getItem(`movieViews-${this.slug}`);
-          this.movie = {
-            ...response.data.movie,
-            views: storedViews ? parseInt(storedViews, 10) : 0
-          };
-          this.selectedEpisode = this.movie.episodes[0].items[0];  // Mặc định chọn tập 1
-        } else {
-          console.error('Không tìm thấy phim');
-        }
+        const response = await axios.get(`https://apii.online/api/phim/${this.$route.params.slug}`);
+        this.movie = response.data.movie;
+        this.loading = false;
       } catch (error) {
-        console.error('Lỗi khi lấy thông tin phim:', error);
+        this.error = 'Có lỗi xảy ra khi lấy thông tin phim';
+        this.loading = false;
       }
     },
-    redirectToMoviePlayer() {
-      this.$router.push({ name: 'MoviePlayer', params: { slug: this.slug, episode: this.selectedEpisode.slug } });
+    getTrailerSrc() {
+      const videoId = this.movie.trailer_url.split('v=')[1];
+      const ampersandPosition = videoId ? videoId.indexOf('&') : -1;
+      return `https://www.youtube.com/embed/${ampersandPosition !== -1 ? videoId.substring(0, ampersandPosition) : videoId}`;
     },
-    formatViews(views) {
-      return views.toLocaleString(); // Thêm dấu phẩy ngăn cách hàng nghìn
-    },
-  },
-  mounted() {
-    this.fetchMovieDetails();
   },
 };
 </script>
@@ -81,48 +81,41 @@ export default {
 
 .movie-container {
   display: flex;
-  flex-direction: column;
-}
-
-.movie-info-section {
-  display: flex;
-  justify-content: flex-start;
   align-items: flex-start;
 }
 
-.movie-info-section .movie-poster {
-  width: 300px;
-  height: 450px;
-  object-fit: cover;
+.movie-poster {
+  width: auto;
+  height: 400px;
   border-radius: 8px;
 }
 
 .movie-info {
-  flex: 1;
-  padding-left: 20px;
+  padding-left: 10px;
   text-align: left;
+  font-size: 0.9em;
 }
 
 .movie-title {
   font-size: 2.2em;
   color: #333;
+  margin-bottom: 10px;
 }
 
 .movie-info p {
   font-size: 1.1em;
   color: #555;
-  margin: 10px 0;
+  margin: 5px 0;
 }
 
 .movie-description {
-  font-size: 1.1em;
+  font-size: 0.9em;
   color: #555;
+  margin-bottom: 5px;
 }
 
-.watch-button {
-  background-color: #1e90ff;
-  color: white;
-  border: none;
+.btn {
+  margin-right: 5px;
   padding: 10px 20px;
   font-size: 1em;
   border-radius: 4px;
@@ -130,13 +123,34 @@ export default {
   font-weight: bold;
 }
 
-.watch-button:hover {
-  background-color: #0056b3;
+.btn-primary {
+  background-color: #007bff;
+  color: white;
+  border: none;
+}
+
+.btn-success {
+  background-color: #28a745;
+  color: white;
+  border: none;
+}
+
+.btn-secondary {
+  background-color: #6c757d;
+  color: white;
+  border: none;
 }
 
 .loading-message {
   text-align: center;
   font-size: 1.5em;
   color: #888;
+}
+
+.trailer-container {
+  margin-top: 20px;
+  border: 1px solid #ddd;
+  padding: 10px;
+  border-radius: 5px;
 }
 </style>
